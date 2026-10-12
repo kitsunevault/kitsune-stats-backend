@@ -24,7 +24,7 @@ final class Filtros {
         }
         return new Filtro(
             desde, t, Boolean.TRUE.equals(verificadas), tienda == null || tienda.isBlank() ? null : tienda.trim(),
-            lider == null || lider.isBlank() ? null : lider.trim().toUpperCase()
+            lider == null || lider.isBlank() ? null : lider.trim().toUpperCase(), null
         );
     }
 }

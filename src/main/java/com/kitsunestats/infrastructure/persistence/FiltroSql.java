@@ -14,10 +14,19 @@ final class FiltroSql {
     private FiltroSql() {
     }
 
-    /** Las que cuentan en las globales: ni ocultas por el administrador ni rechazadas por el rival. */
+    /**
+     * Las que cuentan en las stats de un meta: ni ocultas por el administrador ni rechazadas por el
+     * rival, y del meta del filtro (sin metaId, el global: las que no son de ningún meta privado).
+     */
     static FiltroSql globales(Filtro f) {
         FiltroSql r = new FiltroSql();
         r.sql.append(" NOT p.oculta AND p.confirmacion <> 'RECHAZADA'");
+        if (f.metaId() == null) {
+            r.sql.append(" AND p.meta_id IS NULL");
+        } else {
+            r.sql.append(" AND p.meta_id = ?");
+            r.params.add(f.metaId());
+        }
         if (f.desde() != null) {
             r.sql.append(" AND p.jugada_en >= ?");
             r.params.add(Date.valueOf(f.desde()));

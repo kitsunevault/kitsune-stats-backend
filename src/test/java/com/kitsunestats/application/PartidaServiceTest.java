@@ -39,7 +39,7 @@ class PartidaServiceTest {
         public Partida crear(Partida p) {
             Partida c = new Partida((long) guardadas.size() + 1, p.jugadorId(), p.jugadorUsername(), p.lider(), p.rivalLider(), p.empece(), p.gane(),
                 p.jugadaEn(), p.tipo(), p.rivalId(), p.rivalUsername(), p.confirmacion(), p.tiendaId(), p.tiendaNombre(), p.torneoId(),
-                p.torneoNombre(), p.ronda(), p.notas(), false, LocalDateTime.now());
+                p.torneoNombre(), p.ronda(), p.notas(), false, LocalDateTime.now(), p.metaId(), null);
             guardadas.add(c);
             return c;
         }
@@ -64,7 +64,7 @@ class PartidaServiceTest {
         public void cambiarConfirmacion(Long id, String c) {
             guardadas.replaceAll(p -> !p.id().equals(id) ? p : new Partida(p.id(), p.jugadorId(), p.jugadorUsername(), p.lider(), p.rivalLider(),
                 p.empece(), p.gane(), p.jugadaEn(), p.tipo(), p.rivalId(), p.rivalUsername(), c, p.tiendaId(), p.tiendaNombre(), p.torneoId(),
-                p.torneoNombre(), p.ronda(), p.notas(), p.oculta(), p.creadoEn()));
+                p.torneoNombre(), p.ronda(), p.notas(), p.oculta(), p.creadoEn(), p.metaId(), p.metaNombre()));
         }
 
         @Override
@@ -147,11 +147,11 @@ class PartidaServiceTest {
             }
         };
         TorneosTiendasPort torneos = (usuarioId, tienda) -> List.of(torneo);
-        servicio = new PartidaService(new RepoMemoria(), lideres, cuentas, torneos);
+        servicio = new PartidaService(new RepoMemoria(), lideres, cuentas, torneos, null);
     }
 
     private static NuevaPartida casual(String rival) {
-        return new NuevaPartida("op05-119", "OP05-062", true, true, null, null, rival, null, null, null, null, null);
+        return new NuevaPartida("op05-119", "OP05-062", true, true, null, null, rival, null, null, null, null, null, null);
     }
 
     @Test
@@ -180,7 +180,7 @@ class PartidaServiceTest {
     void corregirTrasRechazoVuelveAPedirConfirmacion() {
         Partida p = servicio.registrar(ana, casual("beto"));
         servicio.rechazar(beto, p.id());
-        Partida corregida = servicio.corregir(ana, p.id(), new NuevaPartida("OP05-119", "OP05-062", false, false, null, null, null, null, null, null, null, null));
+        Partida corregida = servicio.corregir(ana, p.id(), new NuevaPartida("OP05-119", "OP05-062", false, false, null, null, null, null, null, null, null, null, null));
         assertThat(corregida.confirmacion()).isEqualTo(Partida.PENDIENTE);
         assertThat(corregida.gane()).isFalse();
         // El rival no puede corregirla: solo confirmar o rechazar.
@@ -191,11 +191,11 @@ class PartidaServiceTest {
     void validaciones() {
         assertThatThrownBy(() -> servicio.registrar(ana, casual("ana"))).hasMessageContaining("no puedes ser tú");
         assertThatThrownBy(() -> servicio.registrar(ana, casual("nadie"))).hasMessageContaining("No hay ninguna cuenta");
-        assertThatThrownBy(() -> servicio.registrar(ana, new NuevaPartida("OP01-001", "OP05-062", true, true, null, null, null, null, null, null, null, null)))
+        assertThatThrownBy(() -> servicio.registrar(ana, new NuevaPartida("OP01-001", "OP05-062", true, true, null, null, null, null, null, null, null, null, null)))
             .hasMessageContaining("No existe el líder");
-        assertThatThrownBy(() -> servicio.registrar(ana, new NuevaPartida("OP05-119", "OP05-062", null, true, null, null, null, null, null, null, null, null)))
+        assertThatThrownBy(() -> servicio.registrar(ana, new NuevaPartida("OP05-119", "OP05-062", null, true, null, null, null, null, null, null, null, null, null)))
             .hasMessageContaining("quién empezó");
-        assertThatThrownBy(() -> servicio.registrar(ana, new NuevaPartida("OP05-119", "OP05-062", true, true, LocalDate.now().plusDays(1), null, null, null, null, null, null, null)))
+        assertThatThrownBy(() -> servicio.registrar(ana, new NuevaPartida("OP05-119", "OP05-062", true, true, LocalDate.now().plusDays(1), null, null, null, null, null, null, null, null)))
             .hasMessageContaining("futura");
     }
 
@@ -209,20 +209,20 @@ class PartidaServiceTest {
 
     @Test
     void torneoConRivalDeLosParticipantesYSinRondaDuplicada() {
-        NuevaPartida ronda1 = new NuevaPartida("OP05-119", "OP05-062", true, true, null, "TORNEO", null, 2L, "mc", 9L, 1, null);
+        NuevaPartida ronda1 = new NuevaPartida("OP05-119", "OP05-062", true, true, null, "TORNEO", null, 2L, "mc", 9L, 1, null, null);
         Partida p = servicio.registrar(ana, ronda1);
         assertThat(p.tipo()).isEqualTo(Partida.TORNEO);
         assertThat(p.jugadaEn()).isEqualTo(torneo.fecha());
         assertThat(p.rivalUsername()).isEqualTo("beto");
         assertThat(p.confirmacion()).isEqualTo(Partida.PENDIENTE);
         // La misma ronda la intenta registrar el rival: debe confirmarla, no duplicarla.
-        assertThatThrownBy(() -> servicio.registrar(beto, new NuevaPartida("OP05-062", "OP05-119", false, false, null, "TORNEO", null, 1L, "mc", 9L, 1, null)))
+        assertThatThrownBy(() -> servicio.registrar(beto, new NuevaPartida("OP05-062", "OP05-119", false, false, null, "TORNEO", null, 1L, "mc", 9L, 1, null, null)))
             .isInstanceOf(ConflictoException.class);
-        assertThatThrownBy(() -> servicio.registrar(ana, new NuevaPartida("OP05-119", "OP05-062", true, true, null, "TORNEO", null, 99L, "mc", 9L, 2, null)))
+        assertThatThrownBy(() -> servicio.registrar(ana, new NuevaPartida("OP05-119", "OP05-062", true, true, null, "TORNEO", null, 99L, "mc", 9L, 2, null, null)))
             .hasMessageContaining("no está en el torneo");
-        assertThatThrownBy(() -> servicio.registrar(ana, new NuevaPartida("OP05-119", "OP05-062", true, true, null, "TORNEO", null, null, "otra", 9L, 2, null)))
+        assertThatThrownBy(() -> servicio.registrar(ana, new NuevaPartida("OP05-119", "OP05-062", true, true, null, "TORNEO", null, null, "otra", 9L, 2, null, null)))
             .hasMessageContaining("No perteneces");
-        assertThatThrownBy(() -> servicio.registrar(ana, new NuevaPartida("OP05-119", "OP05-062", true, true, null, "TORNEO", null, null, "mc", 77L, 2, null)))
+        assertThatThrownBy(() -> servicio.registrar(ana, new NuevaPartida("OP05-119", "OP05-062", true, true, null, "TORNEO", null, null, "mc", 77L, 2, null, null)))
             .hasMessageContaining("No jugaste");
     }
 }

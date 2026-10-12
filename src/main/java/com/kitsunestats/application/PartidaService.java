@@ -26,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
  * - Con rival (cuenta Kitsune) la partida queda pendiente hasta que él la confirme o la rechace;
  *   ya confirmada no se cambia ni se borra (es de los dos).
  * - Máximo LIMITE_DIARIO registros por jugador al día, para que nadie deforme las globales.
+ * - En un meta privado (solo casuales): las reglas del meta (MetaPrivadoService.validarPartida).
  */
 @Service
 @RequiredArgsConstructor
@@ -38,6 +39,7 @@ public class PartidaService {
     private final LiderRepositoryPort lideres;
     private final KitsuneCuentasPort cuentas;
     private final TorneosTiendasPort torneos;
+    private final MetaPrivadoService metasPrivados;
 
     /** Quién hace la petición (viene del JWT de Kitsune Stats). */
     public record Jugador(Long id, String username) {
@@ -57,6 +59,9 @@ public class PartidaService {
         String tipo = n.tipo() == null || n.tipo().isBlank() ? Partida.CASUAL : n.tipo().trim().toUpperCase();
 
         if (Partida.TORNEO.equals(tipo)) {
+            if (n.metaId() != null) {
+                throw new IllegalArgumentException("Las partidas de torneos de tienda van al meta global");
+            }
             if (n.tiendaId() == null || n.torneoId() == null || n.ronda() == null) {
                 throw new IllegalArgumentException("Elige el torneo y la ronda");
             }
@@ -89,7 +94,7 @@ public class PartidaService {
                 null, yo.id(), yo.username(), lider, rivalLider, n.empece(), n.gane(), torneo.fecha(), Partida.TORNEO,
                 rival == null ? null : rival.id(), rival == null ? null : rival.username(),
                 rival == null ? Partida.SIN_RIVAL : Partida.PENDIENTE,
-                tienda.tenantId(), tienda.nombre(), torneo.id(), torneo.nombre(), n.ronda(), notas, false, null
+                tienda.tenantId(), tienda.nombre(), torneo.id(), torneo.nombre(), n.ronda(), notas, false, null, null, null
             ));
         }
         if (!Partida.CASUAL.equals(tipo)) {
@@ -104,11 +109,14 @@ public class PartidaService {
                 throw new IllegalArgumentException("Tu rival no puedes ser tú");
             }
         }
+        if (n.metaId() != null) {
+            metasPrivados.validarPartida(yo.id(), n.metaId(), lider, rivalLider, fecha, rival == null ? null : rival.id());
+        }
         return repo.crear(new Partida(
             null, yo.id(), yo.username(), lider, rivalLider, n.empece(), n.gane(), fecha, Partida.CASUAL,
             rival == null ? null : rival.id(), rival == null ? null : rival.username(),
             rival == null ? Partida.SIN_RIVAL : Partida.PENDIENTE,
-            null, null, null, null, null, notas, false, null
+            null, null, null, null, null, notas, false, null, n.metaId(), null
         ));
     }
 
@@ -127,11 +135,16 @@ public class PartidaService {
         }
         LocalDate fecha = Partida.CASUAL.equals(actual.tipo()) ? fecha(n.jugadaEn() != null ? n.jugadaEn() : actual.jugadaEn()) : actual.jugadaEn();
         String confirmacion = Partida.RECHAZADA.equals(actual.confirmacion()) ? Partida.PENDIENTE : actual.confirmacion();
+        String lider = liderActivo(n.lider(), "tu líder");
+        String rivalLider = liderActivo(n.rivalLider(), "el líder de tu rival");
+        if (actual.metaId() != null) {
+            metasPrivados.validarPartida(actual.jugadorId(), actual.metaId(), lider, rivalLider, fecha, actual.rivalId());
+        }
         Partida nueva = new Partida(
-            actual.id(), actual.jugadorId(), actual.jugadorUsername(), liderActivo(n.lider(), "tu líder"), liderActivo(n.rivalLider(), "el líder de tu rival"),
+            actual.id(), actual.jugadorId(), actual.jugadorUsername(), lider, rivalLider,
             n.empece(), n.gane(), fecha, actual.tipo(), actual.rivalId(), actual.rivalUsername(), confirmacion,
             actual.tiendaId(), actual.tiendaNombre(), actual.torneoId(), actual.torneoNombre(), actual.ronda(), notas(n.notas()), actual.oculta(),
-            actual.creadoEn()
+            actual.creadoEn(), actual.metaId(), actual.metaNombre()
         );
         return repo.actualizar(nueva);
     }

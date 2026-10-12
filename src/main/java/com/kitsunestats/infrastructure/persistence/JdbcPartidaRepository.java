@@ -21,13 +21,15 @@ public class JdbcPartidaRepository implements PartidaRepositoryPort {
 
     private static final String COLUMNAS = """
         id, jugador_id, jugador_username, lider, rival_lider, empece, gane, jugada_en, tipo, rival_id, rival_username, confirmacion,
-        tienda_id, tienda_nombre, torneo_id, torneo_nombre, ronda, notas, oculta, creado_en
+        tienda_id, tienda_nombre, torneo_id, torneo_nombre, ronda, notas, oculta, creado_en,
+        meta_id, (SELECT m.nombre FROM metas m WHERE m.id = partidas.meta_id)
         """;
 
     /** Las mismas columnas, vistas desde el rival (para las partidas que él confirmó). */
     private static final String COLUMNAS_DEL_RIVAL = """
         id, rival_id, rival_username, rival_lider, lider, NOT empece, NOT gane, jugada_en, tipo, jugador_id, jugador_username, confirmacion,
-        tienda_id, tienda_nombre, torneo_id, torneo_nombre, ronda, NULL, oculta, creado_en
+        tienda_id, tienda_nombre, torneo_id, torneo_nombre, ronda, NULL, oculta, creado_en,
+        meta_id, (SELECT m.nombre FROM metas m WHERE m.id = partidas.meta_id)
         """;
 
     static Partida partida(ResultSet rs, int i) throws SQLException {
@@ -35,7 +37,7 @@ public class JdbcPartidaRepository implements PartidaRepositoryPort {
             rs.getLong(1), rs.getLong(2), rs.getString(3), rs.getString(4), rs.getString(5), rs.getBoolean(6), rs.getBoolean(7),
             rs.getDate(8).toLocalDate(), rs.getString(9), rs.getObject(10, Long.class), rs.getString(11), rs.getString(12),
             rs.getString(13), rs.getString(14), rs.getObject(15, Long.class), rs.getString(16), rs.getObject(17, Integer.class),
-            rs.getString(18), rs.getBoolean(19), rs.getTimestamp(20).toLocalDateTime()
+            rs.getString(18), rs.getBoolean(19), rs.getTimestamp(20).toLocalDateTime(), rs.getObject(21, Long.class), rs.getString(22)
         );
     }
 
@@ -43,11 +45,12 @@ public class JdbcPartidaRepository implements PartidaRepositoryPort {
     public Partida crear(Partida p) {
         Long id = jdbc.queryForObject("""
             INSERT INTO partidas (jugador_id, jugador_username, lider, rival_lider, empece, gane, jugada_en, tipo, rival_id, rival_username,
-                confirmacion, tienda_id, tienda_nombre, torneo_id, torneo_nombre, ronda, notas)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+                confirmacion, tienda_id, tienda_nombre, torneo_id, torneo_nombre, ronda, notas, meta_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
             """, Long.class,
             p.jugadorId(), p.jugadorUsername(), p.lider(), p.rivalLider(), p.empece(), p.gane(), Date.valueOf(p.jugadaEn()), p.tipo(),
-            p.rivalId(), p.rivalUsername(), p.confirmacion(), p.tiendaId(), p.tiendaNombre(), p.torneoId(), p.torneoNombre(), p.ronda(), p.notas()
+            p.rivalId(), p.rivalUsername(), p.confirmacion(), p.tiendaId(), p.tiendaNombre(), p.torneoId(), p.torneoNombre(), p.ronda(), p.notas(),
+            p.metaId()
         );
         return obtener(id).orElseThrow();
     }
@@ -110,6 +113,12 @@ public class JdbcPartidaRepository implements PartidaRepositoryPort {
             confirmadas.append(" AND tienda_id = ?");
             p1.add(f.tiendaId());
             p2.add(f.tiendaId());
+        }
+        if (f.metaId() != null) {
+            propias.append(" AND meta_id = ?");
+            confirmadas.append(" AND meta_id = ?");
+            p1.add(f.metaId());
+            p2.add(f.metaId());
         }
         if (f.lider() != null) {
             propias.append(" AND lider = ?");

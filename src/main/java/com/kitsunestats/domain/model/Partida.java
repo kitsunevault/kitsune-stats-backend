@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
  *
  * confirmacion: SIN_RIVAL (no se indicó rival con cuenta), PENDIENTE, CONFIRMADA o RECHAZADA.
  * tipo: CASUAL o TORNEO (torneo de una tienda de Kitsune Vaults).
+ * metaId/metaNombre: el meta privado al que pertenece (null = meta global).
  */
 public record Partida(
     Long id,
@@ -32,7 +33,9 @@ public record Partida(
     Integer ronda,
     String notas,
     boolean oculta,
-    LocalDateTime creadoEn
+    LocalDateTime creadoEn,
+    Long metaId,
+    String metaNombre
 ) {
 
     public static final String SIN_RIVAL = "SIN_RIVAL";
@@ -46,7 +49,7 @@ public record Partida(
     public Partida delLadoDelRival() {
         return new Partida(
             id, rivalId, rivalUsername, rivalLider, lider, !empece, !gane, jugadaEn, tipo, jugadorId, jugadorUsername,
-            confirmacion, tiendaId, tiendaNombre, torneoId, torneoNombre, ronda, null, oculta, creadoEn
+            confirmacion, tiendaId, tiendaNombre, torneoId, torneoNombre, ronda, null, oculta, creadoEn, metaId, metaNombre
         );
     }
 }

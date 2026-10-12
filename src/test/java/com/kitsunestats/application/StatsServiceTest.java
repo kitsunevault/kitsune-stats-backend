@@ -21,7 +21,7 @@ class StatsServiceTest {
     private static Partida p(String mio, String rival, boolean empece, boolean gane, String confirmacion) {
         return new Partida(
             1L, 1L, "yo", mio, rival, empece, gane, LocalDate.now(), Partida.CASUAL, null, null, confirmacion,
-            null, null, null, null, null, null, false, null
+            null, null, null, null, null, null, false, null, null, null
         );
     }
 
@@ -75,7 +75,7 @@ class StatsServiceTest {
     void elLadoDelRivalVoltea() {
         Partida mia = new Partida(
             5L, 1L, "ana", "OP05-119", "OP05-062", true, true, LocalDate.now(), Partida.CASUAL, 2L, "beto", Partida.CONFIRMADA,
-            null, null, null, null, null, "nota de ana", false, null
+            null, null, null, null, null, "nota de ana", false, null, null, null
         );
         Partida suya = mia.delLadoDelRival();
         assertThat(suya.jugadorId()).isEqualTo(2L);
