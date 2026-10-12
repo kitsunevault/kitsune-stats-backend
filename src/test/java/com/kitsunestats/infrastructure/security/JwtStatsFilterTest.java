@@ -1,12 +1,17 @@
 package com.kitsunestats.infrastructure.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import com.kitsunestats.application.AdminsService;
+import com.kitsunestats.domain.port.out.KitsuneCuentasPort;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -16,7 +21,13 @@ class JwtStatsFilterTest {
 
     private static final String APPS = "secreto-de-apps-para-pruebas-0123456789abcdef0123456789abcdef";
     private static final String TIENDAS = "secreto-de-tiendas-para-pruebas-0123456789abcdef0123456789abcd";
-    private final JwtStatsFilter filtro = new JwtStatsFilter(APPS, "7");
+    private final KitsuneCuentasPort cuentas = mock(KitsuneCuentasPort.class);
+    // 7: respaldo de emergencia (stats.admins); 9: dado de alta en el panel de la plataforma.
+    private final JwtStatsFilter filtro = new JwtStatsFilter(APPS, new AdminsService(cuentas, "7"));
+
+    {
+        when(cuentas.adminsDeStats()).thenReturn(List.of(9L));
+    }
 
     private static String token(String secreto, Long usuarioId, String app) {
         var b = Jwts.builder().subject("ana").claim("usuarioId", usuarioId).issuedAt(new Date())
@@ -68,8 +79,14 @@ class JwtStatsFilterTest {
     }
 
     @Test
-    void adminSoloParaLosConfigurados() throws Exception {
+    void adminSoloParaLosDelPanelOElRespaldo() throws Exception {
         assertThat(correr("GET", "/api/admin/partidas", token(APPS, 3L, "stats"), null).getStatus()).isEqualTo(403);
         assertThat(correr("GET", "/api/admin/partidas", token(APPS, 7L, "stats"), null).getStatus()).isEqualTo(200);
+        assertThat(correr("GET", "/api/admin/partidas", token(APPS, 9L, "stats"), null).getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void elPreflightDeCorsPasaSinToken() throws Exception {
+        assertThat(correr("OPTIONS", "/api/admin/partidas", null, null).getStatus()).isEqualTo(200);
     }
 }

@@ -59,6 +59,16 @@ public class KitsuneCuentasAdapter implements KitsuneCuentasPort {
     }
 
     @Override
+    public List<Long> adminsDeStats() {
+        List<Long> r = restClient.get()
+            .uri("/api/interno/kitsune/usuarios/admins-de/stats")
+            .header("X-Internal-Secret", secreto)
+            .retrieve()
+            .body(new ParameterizedTypeReference<List<Long>>() {});
+        return r == null ? List.of() : r;
+    }
+
+    @Override
     public List<Tienda> tiendas(Long usuarioId) {
         try {
             List<Tienda> r = restClient.get()

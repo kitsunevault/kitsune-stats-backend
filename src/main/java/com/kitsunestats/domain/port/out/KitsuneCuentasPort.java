@@ -14,4 +14,7 @@ public interface KitsuneCuentasPort {
 
     /** Tiendas de Kitsune Vaults a las que se unió el jugador. */
     List<Tienda> tiendas(Long usuarioId);
+
+    /** usuarioId de los admins de Kitsune Stats (panel de la plataforma). Lanza si no se pudo consultar. */
+    List<Long> adminsDeStats();
 }

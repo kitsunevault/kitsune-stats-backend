@@ -140,6 +140,11 @@ class PartidaServiceTest {
             public List<Tienda> tiendas(Long usuarioId) {
                 return List.of(new Tienda("mc", "Magic Cauldron"));
             }
+
+            @Override
+            public List<Long> adminsDeStats() {
+                return List.of();
+            }
         };
         TorneosTiendasPort torneos = (usuarioId, tienda) -> List.of(torneo);
         servicio = new PartidaService(new RepoMemoria(), lideres, cuentas, torneos);

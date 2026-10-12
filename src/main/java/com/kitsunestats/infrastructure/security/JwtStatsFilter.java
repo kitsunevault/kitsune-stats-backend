@@ -9,8 +9,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import com.kitsunestats.application.AdminsService;
 import java.nio.charset.StandardCharsets;
-import java.util.Set;
 import javax.crypto.SecretKey;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -22,18 +22,17 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * con otro secreto. Si es válido deja usuarioId, username y si es administrador en el request.
  *
  * Sin token solo pasan las consultas públicas (líderes y stats globales); lo demás de /api da 401 y
- * /api/admin, 403 si no es administrador (stats.admins).
+ * /api/admin, 403 si no es administrador (AdminsService: panel de la plataforma o stats.admins).
  */
 @Component
 public class JwtStatsFilter extends OncePerRequestFilter {
 
     private final SecretKey key;
-    private final Set<Long> admins;
+    private final AdminsService admins;
 
-    public JwtStatsFilter(@Value("${jwt.apps-secret}") String secreto, @Value("${stats.admins:}") String admins) {
+    public JwtStatsFilter(@Value("${jwt.apps-secret}") String secreto, AdminsService admins) {
         this.key = Keys.hmacShaKeyFor(secreto.getBytes(StandardCharsets.UTF_8));
-        this.admins = admins.isBlank() ? Set.of() : java.util.Arrays.stream(admins.split(","))
-            .map(String::trim).filter(s -> !s.isEmpty()).map(Long::valueOf).collect(java.util.stream.Collectors.toUnmodifiableSet());
+        this.admins = admins;
     }
 
     @Override
@@ -57,7 +56,7 @@ public class JwtStatsFilter extends OncePerRequestFilter {
                 if ("stats".equals(c.get("app", String.class)) && usuarioId != null) {
                     request.setAttribute("usuarioId", usuarioId);
                     request.setAttribute("username", c.getSubject());
-                    request.setAttribute("admin", admins.contains(usuarioId));
+                    request.setAttribute("admin", admins.esAdmin(usuarioId));
                 }
             } catch (JwtException | IllegalArgumentException ex) {
                 // Token vencido o ajeno: como si no hubiera; abajo se decide si la ruta lo pide.
