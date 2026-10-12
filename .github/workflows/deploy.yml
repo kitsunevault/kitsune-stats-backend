@@ -1,0 +1,52 @@
+name: Deploy stats-service
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Compilar y probar
+        run: |
+          chmod +x gradlew
+          ./gradlew test bootJar
+
+      - name: Cargar llave SSH de despliegue
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Agregar el servidor a known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Subir el jar al servidor
+        run: |
+          scp build/libs/stats-service.jar ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/tmp/
+
+      - name: Aplicar migraciones de base de datos
+        # Solo las que faltan. Si una falla, el despliegue se detiene aquí y el
+        # servicio sigue con la versión anterior.
+        run: |
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'rm -rf /tmp/stats-migraciones && mkdir -p /tmp/stats-migraciones'
+          scp -r migraciones aplicar-migraciones.sh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/tmp/stats-migraciones/
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'chmod -R a+rX /tmp/stats-migraciones && cd /tmp && sudo -u postgres env STATS_DB_ROLE=kitsune_stats bash /tmp/stats-migraciones/aplicar-migraciones.sh /tmp/stats-migraciones/migraciones'
+
+      - name: Instalar y reiniciar
+        run: |
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} '
+            set -e
+            sudo mv /tmp/stats-service.jar /opt/kitsune/
+            sudo chown kitsune:kitsune /opt/kitsune/stats-service.jar
+            sudo systemctl restart stats-service
+          '

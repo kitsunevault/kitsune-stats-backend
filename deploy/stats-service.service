@@ -1,0 +1,15 @@
+[Unit]
+Description=Kitsune Stats - stats-service
+After=network.target postgresql.service users-service.service orders-service.service
+
+[Service]
+User=kitsune
+EnvironmentFile=/etc/kitsune/stats.env
+Environment=SPRING_PROFILES_ACTIVE=prod
+# Servicio chico (una base, pocas consultas): menos memoria que los de las tiendas.
+ExecStart=/usr/bin/java -Xmx192m -jar /opt/kitsune/stats-service.jar
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

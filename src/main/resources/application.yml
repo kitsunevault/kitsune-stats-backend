@@ -1,0 +1,39 @@
+server:
+  port: ${PORT:8085}
+  # En producción va detrás de nginx (stats.kitsunevaults.com → /api/ a este puerto).
+  forward-headers-strategy: native
+
+spring:
+  application:
+    name: stats-service
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${STATS_DB_NAME:kitsune_stats}
+    username: ${STATS_DB_USER:kitsune_admin}
+    password: ${STATS_DB_PASSWORD:${DB_PASSWORD:}}
+    hikari:
+      # Base chica y pocas consultas a la vez: no acaparar conexiones de PostgreSQL.
+      maximum-pool-size: 4
+      minimum-idle: 1
+      idle-timeout: 300000
+  jackson:
+    default-property-inclusion: always
+
+jwt:
+  # Mismo secreto de apps que users-service de Kitsune Vaults (JWT_APPS_SECRET): solo valida, no emite.
+  apps-secret: ${JWT_APPS_SECRET:kitsune-dev-apps-secret-change-in-production-0f1e2d3c4b5a69788796a5b4c3d2e1f0}
+
+kitsune:
+  # users-service y orders-service de Kitsune Vaults (endpoints /api/interno con el secreto interno).
+  users-url: ${KITSUNE_USERS_URL:https://localhost:8082}
+  orders-url: ${KITSUNE_ORDERS_URL:https://localhost:8084}
+  internal-secret: ${INTERNAL_SERVICE_SECRET:kitsune-dev-internal-secret-please-change-in-production}
+
+stats:
+  # usuarioIds (cuenta Kitsune) de los administradores, separados por coma.
+  admins: ${STATS_ADMINS:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

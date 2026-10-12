@@ -1,0 +1,18 @@
+# Perfil de producción (SPRING_PROFILES_ACTIVE=prod, lo pone la unidad de systemd).
+# Las variables salen de /etc/kitsune/stats.env (ver deploy/preparar-servidor.sh).
+
+spring:
+  datasource:
+    username: ${STATS_DB_USER:kitsune_stats}
+    password: ${STATS_DB_PASSWORD}
+
+# Sin valor por defecto a propósito: si faltan, el servicio no arranca en lugar de
+# quedarse con los secretos de desarrollo, que están en el repo.
+jwt:
+  apps-secret: ${JWT_APPS_SECRET}
+
+kitsune:
+  # Misma máquina: HTTP plano a los servicios de Kitsune Vaults (nginx atiende el HTTPS público).
+  users-url: ${KITSUNE_USERS_URL:http://localhost:8082}
+  orders-url: ${KITSUNE_ORDERS_URL:http://localhost:8084}
+  internal-secret: ${INTERNAL_SERVICE_SECRET}
