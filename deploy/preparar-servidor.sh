@@ -24,7 +24,7 @@ ENV_STATS=/etc/kitsune/stats.env
 PSQL=(sudo -u postgres psql -X -v ON_ERROR_STOP=1 -q)
 
 [ "$(id -u)" -eq 0 ] || { echo "Córrelo con sudo." >&2; exit 1; }
-for f in "$ENV_KITSUNE" /etc/nginx/proxy_params_kitsune /etc/letsencrypt/live/kitsunevaults.com/fullchain.pem \
+for f in "$ENV_KITSUNE" /etc/nginx/proxy_params_kitsune /etc/ssl/cloudflare/kitsunevaults.com.pem \
          "$AQUI/stats-service.service" "$AQUI/nginx-stats.conf"; do
   [ -e "$f" ] || { echo "Falta $f" >&2; exit 1; }
 done
