@@ -42,6 +42,14 @@ jobs:
           scp -r migraciones aplicar-migraciones.sh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/tmp/stats-migraciones/
           ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'chmod -R a+rX /tmp/stats-migraciones && cd /tmp && sudo -u postgres env STATS_DB_ROLE=kitsune_stats bash /tmp/stats-migraciones/aplicar-migraciones.sh /tmp/stats-migraciones/migraciones'
 
+      - name: Pausar los monitores de UptimeRobot
+        # El servicio tarda en volver; sin esto UptimeRobot llama a Julio en cada
+        # despliegue. Si UptimeRobot falla, el despliegue sigue igual.
+        continue-on-error: true
+        env:
+          UPTIMEROBOT_API_KEY: ${{ secrets.UPTIMEROBOT_API_KEY }}
+        run: python3 .github/uptimerobot.py pausar "$RUNNER_TEMP/monitores-pausados" stats.kitsunevaults.com
+
       - name: Instalar y reiniciar
         run: |
           ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} '
@@ -50,3 +58,22 @@ jobs:
             sudo chown kitsune:kitsune /opt/kitsune/stats-service.jar
             sudo systemctl restart stats-service
           '
+
+      - name: Esperar a que el servicio responda
+        # Hasta 5 minutos. Si no vuelve, el despliegue sale en rojo y los monitores
+        # se encienden igual (paso siguiente), así que UptimeRobot sí avisa.
+        run: |
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} '
+            for intento in $(seq 1 60); do
+              if curl -s -m 5 http://127.0.0.1:8085/actuator/health | grep -q "\"status\":\"UP\""; then echo "El servicio responde."; exit 0; fi
+              sleep 5
+            done
+            echo "El servicio no respondió a tiempo."
+            exit 1
+          '
+
+      - name: Encender de nuevo los monitores de UptimeRobot
+        if: always()
+        env:
+          UPTIMEROBOT_API_KEY: ${{ secrets.UPTIMEROBOT_API_KEY }}
+        run: python3 .github/uptimerobot.py reanudar "$RUNNER_TEMP/monitores-pausados"
