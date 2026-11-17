@@ -25,4 +25,20 @@ public interface MisTorneosRepositoryPort {
 
     /** "tiendaId:torneoTiendaId" de los ya importados (también los ocultos). */
     Set<String> importados(Long usuarioId);
+
+    /** Reemplaza las rondas del torneo. */
+    void guardarRondas(Long torneoId, List<MiTorneo.Ronda> rondas);
+
+    /** Récord del torneo calculado de sus rondas. */
+    void actualizarRecord(Long torneoId, Integer victorias, Integer derrotas, Integer empates);
+
+    /**
+     * Partidas de torneos de tiendas Kitsune que registró en "Registrar partida" (o que confirmó como rival), vistas
+     * desde su lado: para que salgan como rondas de esos torneos.
+     */
+    record PartidaDeTienda(Long partidaId, String tiendaId, Long torneoId, int ronda, String rivalLider, boolean empece, boolean gane,
+                           boolean conRival) {
+    }
+
+    List<PartidaDeTienda> partidasDeTorneosTienda(Long usuarioId);
 }

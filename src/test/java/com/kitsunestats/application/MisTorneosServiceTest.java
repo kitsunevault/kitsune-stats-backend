@@ -42,7 +42,9 @@ class MisTorneosServiceTest {
     private final TorneosTiendasPort tiendas = mock(TorneosTiendasPort.class);
     private final Clock reloj = Clock.fixed(Instant.parse("2026-11-17T18:00:00Z"), ZoneOffset.UTC);
     private final TiendasJugadorRepositoryPort tiendasJugador = mock(TiendasJugadorRepositoryPort.class);
-    private final MisTorneosService service = new MisTorneosService(repo, tiendasJugador, cuentas, tiendas, reloj);
+    private final MisDecksService decks = mock(MisDecksService.class);
+    private final RondasDeTorneo rondas = mock(RondasDeTorneo.class);
+    private final MisTorneosService service = new MisTorneosService(repo, tiendasJugador, cuentas, tiendas, decks, rondas, reloj);
 
     private static final Tienda MAGIC = new Tienda("magiccauldron", "Magic Cauldron");
 

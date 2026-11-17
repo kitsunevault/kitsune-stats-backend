@@ -1,6 +1,7 @@
 package com.kitsunestats.infrastructure.web;
 
 import com.kitsunestats.application.MisTorneosService;
+import com.kitsunestats.domain.model.MiDeck;
 import com.kitsunestats.domain.model.MiTorneo;
 import com.kitsunestats.domain.model.MiTorneo.MisTorneos;
 import com.kitsunestats.domain.model.MiTorneo.TiendaJugador;
@@ -39,13 +40,36 @@ public class MisTorneosController {
 
     @PutMapping("/{id}")
     public MiTorneo actualizar(HttpServletRequest request, @PathVariable Long id, @RequestBody MiTorneo torneo) {
-        return misTorneosService.actualizar(JugadorController.jugador(request).id(), id, torneo);
+        var yo = JugadorController.jugador(request);
+        return misTorneosService.actualizar(yo.id(), yo.username(), id, torneo);
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> borrar(HttpServletRequest request, @PathVariable Long id) {
         misTorneosService.borrar(JugadorController.jugador(request).id(), id);
         return ResponseEntity.noContent().build();
+    }
+
+    // ---------- Mis decks (todas responden con la lista y cómo le va con cada uno) ----------
+
+    @GetMapping("/decks")
+    public List<MiDeck> decks(HttpServletRequest request) {
+        return misTorneosService.misDecks(JugadorController.jugador(request).id());
+    }
+
+    @PostMapping("/decks")
+    public ResponseEntity<List<MiDeck>> crearDeck(HttpServletRequest request, @RequestBody MiDeck deck) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(misTorneosService.crearDeck(JugadorController.jugador(request).id(), deck));
+    }
+
+    @PutMapping("/decks/{id}")
+    public List<MiDeck> actualizarDeck(HttpServletRequest request, @PathVariable Long id, @RequestBody MiDeck deck) {
+        return misTorneosService.actualizarDeck(JugadorController.jugador(request).id(), id, deck);
+    }
+
+    @DeleteMapping("/decks/{id}")
+    public List<MiDeck> borrarDeck(HttpServletRequest request, @PathVariable Long id) {
+        return misTorneosService.borrarDeck(JugadorController.jugador(request).id(), id);
     }
 
     // ---------- Sus tiendas (todas responden con la lista completa) ----------

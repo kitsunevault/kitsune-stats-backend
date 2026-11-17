@@ -2,6 +2,7 @@ package com.kitsunestats.application;
 
 import com.kitsunestats.domain.model.Kitsune.ResultadoTorneo;
 import com.kitsunestats.domain.model.Kitsune.Tienda;
+import com.kitsunestats.domain.model.MiDeck;
 import com.kitsunestats.domain.model.MiTorneo;
 import com.kitsunestats.domain.model.MiTorneo.Gasto;
 import com.kitsunestats.domain.model.MiTorneo.MisTorneos;
@@ -58,48 +59,87 @@ public class MisTorneosService {
     private final TiendasJugadorRepositoryPort tiendasJugador;
     private final KitsuneCuentasPort cuentas;
     private final TorneosTiendasPort torneos;
+    private final MisDecksService decks;
+    private final RondasDeTorneo rondas;
     private final Clock reloj;
     private final Map<Long, Instant> ultimaImportacion = new ConcurrentHashMap<>();
 
     @org.springframework.beans.factory.annotation.Autowired
     public MisTorneosService(
-        MisTorneosRepositoryPort repo, TiendasJugadorRepositoryPort tiendasJugador, KitsuneCuentasPort cuentas, TorneosTiendasPort torneos
+        MisTorneosRepositoryPort repo, TiendasJugadorRepositoryPort tiendasJugador, KitsuneCuentasPort cuentas, TorneosTiendasPort torneos,
+        MisDecksService decks, RondasDeTorneo rondas
     ) {
-        this(repo, tiendasJugador, cuentas, torneos, Clock.systemDefaultZone());
+        this(repo, tiendasJugador, cuentas, torneos, decks, rondas, Clock.systemDefaultZone());
     }
 
     MisTorneosService(
         MisTorneosRepositoryPort repo, TiendasJugadorRepositoryPort tiendasJugador, KitsuneCuentasPort cuentas, TorneosTiendasPort torneos,
-        Clock reloj
+        MisDecksService decks, RondasDeTorneo rondas, Clock reloj
     ) {
         this.repo = repo;
         this.tiendasJugador = tiendasJugador;
         this.cuentas = cuentas;
         this.torneos = torneos;
+        this.decks = decks;
+        this.rondas = rondas;
         this.reloj = reloj;
     }
 
     public MisTorneos misTorneos(Long usuarioId) {
         List<Tienda> tiendasKitsune = importar(usuarioId);
         List<MiTorneo> lista = repo.listar(usuarioId);
-        return new MisTorneos(lista, resumen(lista), tiendas(usuarioId, tiendasKitsune));
+        if (rondas.sincronizarDeTiendas(usuarioId, lista)) {
+            lista = repo.listar(usuarioId);
+        }
+        return new MisTorneos(lista, resumen(lista), tiendas(usuarioId, tiendasKitsune), MisDecksService.conStats(decks.listar(usuarioId), lista));
     }
 
+    /** Se crea sin rondas: cómo le fue se registra después, al abrirlo. */
     public MiTorneo crear(Long usuarioId, MiTorneo nuevo) {
-        MiTorneo limpio = validar(nuevo, null);
+        MiTorneo limpio = validar(usuarioId, nuevo, null);
         Long id = repo.crear(usuarioId, limpio);
         recordarTienda(usuarioId, limpio.tiendaNombre());
         return repo.obtener(usuarioId, id).orElseThrow();
     }
 
-    public MiTorneo actualizar(Long usuarioId, Long id, MiTorneo cambios) {
+    /** rondas null = no las cambia (las deja como estaban). */
+    public MiTorneo actualizar(Long usuarioId, String username, Long id, MiTorneo cambios) {
         MiTorneo actual = repo.obtener(usuarioId, id).orElseThrow(() -> new NoEncontradoException("Ese torneo no existe"));
-        MiTorneo limpio = validar(cambios, actual);
+        MiTorneo limpio = validar(usuarioId, cambios, actual);
         repo.actualizar(usuarioId, id, limpio);
+        if (cambios.rondas() != null) {
+            MiDeck deck = decks.obtener(usuarioId, limpio.deckId()).orElse(null);
+            MiTorneo guardado = new MiTorneo(id, limpio.fecha(), limpio.nombre(), limpio.tiendaNombre(), limpio.tiendaId(),
+                limpio.torneoTiendaId(), limpio.juego(), limpio.mazo(), limpio.lugar(), limpio.jugadores(), limpio.victorias(),
+                limpio.derrotas(), limpio.empates(), limpio.entrada(), limpio.moneda(), limpio.notas(), limpio.gastos(), limpio.premios(),
+                limpio.deckId(), null, actual.rondas());
+            rondas.guardar(usuarioId, username, guardado, deck, cambios.rondas());
+        }
         if (!actual.importado()) {
             recordarTienda(usuarioId, limpio.tiendaNombre());
         }
         return repo.obtener(usuarioId, id).orElseThrow();
+    }
+
+    // ---------- Mis decks (todas responden con la lista y cómo le va con cada uno) ----------
+
+    public List<MiDeck> misDecks(Long usuarioId) {
+        return MisDecksService.conStats(decks.listar(usuarioId), repo.listar(usuarioId));
+    }
+
+    public List<MiDeck> crearDeck(Long usuarioId, MiDeck deck) {
+        decks.crear(usuarioId, deck);
+        return misDecks(usuarioId);
+    }
+
+    public List<MiDeck> actualizarDeck(Long usuarioId, Long id, MiDeck deck) {
+        decks.actualizar(usuarioId, id, deck);
+        return misDecks(usuarioId);
+    }
+
+    public List<MiDeck> borrarDeck(Long usuarioId, Long id) {
+        decks.borrar(usuarioId, id);
+        return misDecks(usuarioId);
     }
 
     // ---------- Sus tiendas ----------
@@ -202,6 +242,7 @@ public class MisTorneosService {
         if (actual.importado()) {
             repo.ocultar(usuarioId, id);
         } else {
+            rondas.borrarPartidas(actual);
             repo.borrar(usuarioId, id);
         }
     }
@@ -264,9 +305,13 @@ public class MisTorneosService {
     // ---------- Validación ----------
 
     /** actual: el guardado (al editar). De uno importado no cambia de qué tienda/torneo vino. */
-    MiTorneo validar(MiTorneo t, MiTorneo actual) {
+    MiTorneo validar(Long usuarioId, MiTorneo t, MiTorneo actual) {
         if (t == null) {
             throw new IllegalArgumentException("Faltan los datos del torneo");
+        }
+        MiDeck deck = null;
+        if (t.deckId() != null) {
+            deck = decks.obtener(usuarioId, t.deckId()).orElseThrow(() -> new IllegalArgumentException("Ese deck no está en tus decks"));
         }
         LocalDate hoy = LocalDate.now(reloj);
         if (t.fecha() == null || t.fecha().isAfter(hoy.plusDays(60)) || t.fecha().isBefore(hoy.minusYears(15))) {
@@ -330,12 +375,17 @@ public class MisTorneosService {
             throw new IllegalArgumentException("Son demasiados premios para un torneo (máximo 50)");
         }
 
+        String juego = texto(t.juego(), 60, "el juego");
+        if (juego == null && deck != null) {
+            juego = deck.juego();
+        }
         return new MiTorneo(
             actual == null ? null : actual.id(), t.fecha(), texto(t.nombre(), 150, "el nombre del torneo"), tienda,
             actual == null ? null : actual.tiendaId(), actual == null ? null : actual.torneoTiendaId(),
-            texto(t.juego(), 60, "el juego"), texto(t.mazo(), 80, "el mazo"), lugar, jugadores,
+            juego, texto(t.mazo(), 80, "el deck"), lugar, jugadores,
             noNegativo(t.victorias()), noNegativo(t.derrotas()), noNegativo(t.empates()),
-            entrada == null ? BigDecimal.ZERO : entrada, moneda, texto(t.notas(), 500, "las notas"), gastos, premios
+            entrada == null ? BigDecimal.ZERO : entrada, moneda, texto(t.notas(), 500, "las notas"), gastos, premios,
+            deck == null ? null : deck.id(), null, List.of()
         );
     }
 
