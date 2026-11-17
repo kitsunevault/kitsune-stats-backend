@@ -3,6 +3,8 @@ package com.kitsunestats.infrastructure.web;
 import com.kitsunestats.application.MisTorneosService;
 import com.kitsunestats.domain.model.MiTorneo;
 import com.kitsunestats.domain.model.MiTorneo.MisTorneos;
+import com.kitsunestats.domain.model.MiTorneo.TiendaJugador;
+import java.util.List;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -44,5 +46,34 @@ public class MisTorneosController {
     public ResponseEntity<Void> borrar(HttpServletRequest request, @PathVariable Long id) {
         misTorneosService.borrar(JugadorController.jugador(request).id(), id);
         return ResponseEntity.noContent().build();
+    }
+
+    // ---------- Sus tiendas (todas responden con la lista completa) ----------
+
+    public record DatosTienda(String nombre, String ciudad, Boolean activa) {
+    }
+
+    /** Una tienda que no está en Kitsune Vaults (o que no tiene en Mis tiendas). */
+    @PostMapping("/tiendas")
+    public ResponseEntity<List<TiendaJugador>> crearTienda(HttpServletRequest request, @RequestBody DatosTienda datos) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(misTorneosService.crearTienda(JugadorController.jugador(request).id(), datos.nombre(), datos.ciudad()));
+    }
+
+    @PutMapping("/tiendas/{id}")
+    public List<TiendaJugador> actualizarTienda(HttpServletRequest request, @PathVariable Long id, @RequestBody DatosTienda datos) {
+        return misTorneosService.actualizarTienda(JugadorController.jugador(request).id(), id, datos.nombre(), datos.ciudad(),
+            !Boolean.FALSE.equals(datos.activa()));
+    }
+
+    @DeleteMapping("/tiendas/{id}")
+    public List<TiendaJugador> borrarTienda(HttpServletRequest request, @PathVariable Long id) {
+        return misTorneosService.borrarTienda(JugadorController.jugador(request).id(), id);
+    }
+
+    /** Activar o desactivar una de sus tiendas de Kitsune Vaults. */
+    @PutMapping("/tiendas/kitsune/{tiendaId}")
+    public List<TiendaJugador> estadoTiendaKitsune(HttpServletRequest request, @PathVariable String tiendaId, @RequestBody DatosTienda datos) {
+        return misTorneosService.estadoTiendaKitsune(JugadorController.jugador(request).id(), tiendaId, !Boolean.FALSE.equals(datos.activa()));
     }
 }

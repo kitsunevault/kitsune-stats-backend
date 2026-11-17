@@ -62,7 +62,14 @@ public record MiTorneo(
     public record Resumen(List<Totales> porMoneda, String moneda, List<Totales> porMes, List<Totales> porTienda, List<Totales> porJuego) {
     }
 
-    /** tiendas: nombres para sugerir al capturar (sus tiendas de Kitsune y las que ya ha usado). */
-    public record MisTorneos(List<MiTorneo> torneos, Resumen resumen, List<String> tiendas) {
+    /**
+     * Una tienda del jugador: de Kitsune Vaults (kitsune, con tiendaId) o una que agregó él (id). Desactivada no sale
+     * para elegirla y, si es de Kitsune Vaults, sus torneos ya no se agregan solos.
+     */
+    public record TiendaJugador(Long id, String nombre, String ciudad, String tiendaId, boolean kitsune, boolean activa) {
+    }
+
+    /** tiendas: sus tiendas (de Kitsune Vaults y las que agregó), activas y no. */
+    public record MisTorneos(List<MiTorneo> torneos, Resumen resumen, List<TiendaJugador> tiendas) {
     }
 }

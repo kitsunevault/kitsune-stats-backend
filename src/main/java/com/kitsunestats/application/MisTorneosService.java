@@ -7,9 +7,11 @@ import com.kitsunestats.domain.model.MiTorneo.Gasto;
 import com.kitsunestats.domain.model.MiTorneo.MisTorneos;
 import com.kitsunestats.domain.model.MiTorneo.Premio;
 import com.kitsunestats.domain.model.MiTorneo.Resumen;
+import com.kitsunestats.domain.model.MiTorneo.TiendaJugador;
 import com.kitsunestats.domain.model.MiTorneo.Totales;
 import com.kitsunestats.domain.port.out.KitsuneCuentasPort;
 import com.kitsunestats.domain.port.out.MisTorneosRepositoryPort;
+import com.kitsunestats.domain.port.out.TiendasJugadorRepositoryPort;
 import com.kitsunestats.domain.port.out.TorneosTiendasPort;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -53,18 +55,25 @@ public class MisTorneosService {
     static final Duration CADA = Duration.ofMinutes(5);
 
     private final MisTorneosRepositoryPort repo;
+    private final TiendasJugadorRepositoryPort tiendasJugador;
     private final KitsuneCuentasPort cuentas;
     private final TorneosTiendasPort torneos;
     private final Clock reloj;
     private final Map<Long, Instant> ultimaImportacion = new ConcurrentHashMap<>();
 
     @org.springframework.beans.factory.annotation.Autowired
-    public MisTorneosService(MisTorneosRepositoryPort repo, KitsuneCuentasPort cuentas, TorneosTiendasPort torneos) {
-        this(repo, cuentas, torneos, Clock.systemDefaultZone());
+    public MisTorneosService(
+        MisTorneosRepositoryPort repo, TiendasJugadorRepositoryPort tiendasJugador, KitsuneCuentasPort cuentas, TorneosTiendasPort torneos
+    ) {
+        this(repo, tiendasJugador, cuentas, torneos, Clock.systemDefaultZone());
     }
 
-    MisTorneosService(MisTorneosRepositoryPort repo, KitsuneCuentasPort cuentas, TorneosTiendasPort torneos, Clock reloj) {
+    MisTorneosService(
+        MisTorneosRepositoryPort repo, TiendasJugadorRepositoryPort tiendasJugador, KitsuneCuentasPort cuentas, TorneosTiendasPort torneos,
+        Clock reloj
+    ) {
         this.repo = repo;
+        this.tiendasJugador = tiendasJugador;
         this.cuentas = cuentas;
         this.torneos = torneos;
         this.reloj = reloj;
@@ -73,15 +82,13 @@ public class MisTorneosService {
     public MisTorneos misTorneos(Long usuarioId) {
         List<Tienda> tiendasKitsune = importar(usuarioId);
         List<MiTorneo> lista = repo.listar(usuarioId);
-        Set<String> tiendas = new LinkedHashSet<>();
-        tiendasKitsune.forEach(t -> tiendas.add(t.nombre()));
-        lista.forEach(t -> tiendas.add(t.tiendaNombre()));
-        return new MisTorneos(lista, resumen(lista), tiendas.stream().filter(n -> n != null && !n.isBlank()).toList());
+        return new MisTorneos(lista, resumen(lista), tiendas(usuarioId, tiendasKitsune));
     }
 
     public MiTorneo crear(Long usuarioId, MiTorneo nuevo) {
         MiTorneo limpio = validar(nuevo, null);
         Long id = repo.crear(usuarioId, limpio);
+        recordarTienda(usuarioId, limpio.tiendaNombre());
         return repo.obtener(usuarioId, id).orElseThrow();
     }
 
@@ -89,7 +96,104 @@ public class MisTorneosService {
         MiTorneo actual = repo.obtener(usuarioId, id).orElseThrow(() -> new NoEncontradoException("Ese torneo no existe"));
         MiTorneo limpio = validar(cambios, actual);
         repo.actualizar(usuarioId, id, limpio);
+        if (!actual.importado()) {
+            recordarTienda(usuarioId, limpio.tiendaNombre());
+        }
         return repo.obtener(usuarioId, id).orElseThrow();
+    }
+
+    // ---------- Sus tiendas ----------
+
+    /** Sus tiendas de Kitsune Vaults (activas salvo que las haya desactivado) y las que agregó él. */
+    List<TiendaJugador> tiendas(Long usuarioId, List<Tienda> tiendasKitsune) {
+        List<TiendasJugadorRepositoryPort.Fila> filas = tiendasJugador.listar(usuarioId);
+        Map<String, TiendasJugadorRepositoryPort.Fila> estados = filas.stream().filter(f -> f.tiendaId() != null)
+            .collect(Collectors.toMap(TiendasJugadorRepositoryPort.Fila::tiendaId, Function.identity(), (a, b) -> a));
+        List<TiendaJugador> lista = new ArrayList<>();
+        for (Tienda t : tiendasKitsune) {
+            var estado = estados.get(t.tenantId());
+            lista.add(new TiendaJugador(null, t.nombre() == null ? t.tenantId() : t.nombre(), null, t.tenantId(), true,
+                estado == null || estado.activa()));
+        }
+        filas.stream().filter(f -> f.tiendaId() == null)
+            .forEach(f -> lista.add(new TiendaJugador(f.id(), f.nombre(), f.ciudad(), null, false, f.activa())));
+        return lista;
+    }
+
+    public List<TiendaJugador> crearTienda(Long usuarioId, String nombre, String ciudad) {
+        String limpio = texto(nombre, 120, "el nombre de la tienda");
+        if (limpio == null || limpio.length() < 2) {
+            throw new IllegalArgumentException("Escribe el nombre de la tienda");
+        }
+        if (tiendasJugador.listar(usuarioId).stream().filter(f -> f.tiendaId() == null).count() >= 100) {
+            throw new IllegalArgumentException("Son demasiadas tiendas (máximo 100)");
+        }
+        try {
+            tiendasJugador.crear(usuarioId, limpio, texto(ciudad, 80, "la ciudad"));
+        } catch (DuplicateKeyException ex) {
+            throw new IllegalArgumentException("Ya tienes una tienda con ese nombre");
+        }
+        return tiendas(usuarioId, tiendasKitsune(usuarioId));
+    }
+
+    public List<TiendaJugador> actualizarTienda(Long usuarioId, Long id, String nombre, String ciudad, boolean activa) {
+        String limpio = texto(nombre, 120, "el nombre de la tienda");
+        if (limpio == null || limpio.length() < 2) {
+            throw new IllegalArgumentException("Escribe el nombre de la tienda");
+        }
+        try {
+            if (!tiendasJugador.actualizar(usuarioId, id, limpio, texto(ciudad, 80, "la ciudad"), activa)) {
+                throw new NoEncontradoException("Esa tienda no existe");
+            }
+        } catch (DuplicateKeyException ex) {
+            throw new IllegalArgumentException("Ya tienes una tienda con ese nombre");
+        }
+        return tiendas(usuarioId, tiendasKitsune(usuarioId));
+    }
+
+    /** Sus torneos de esa tienda se quedan (guardan el nombre). */
+    public List<TiendaJugador> borrarTienda(Long usuarioId, Long id) {
+        if (!tiendasJugador.borrar(usuarioId, id)) {
+            throw new NoEncontradoException("Esa tienda no existe");
+        }
+        return tiendas(usuarioId, tiendasKitsune(usuarioId));
+    }
+
+    /** Activa o desactiva una de sus tiendas de Kitsune Vaults. */
+    public List<TiendaJugador> estadoTiendaKitsune(Long usuarioId, String tiendaId, boolean activa) {
+        List<Tienda> suyas = tiendasKitsune(usuarioId);
+        Tienda tienda = suyas.stream().filter(t -> t.tenantId().equals(tiendaId)).findFirst()
+            .orElseThrow(() -> new NoEncontradoException("Esa tienda no está en tus tiendas de Kitsune Vaults"));
+        tiendasJugador.estadoKitsune(usuarioId, tiendaId, tienda.nombre() == null ? tiendaId : tienda.nombre(), activa);
+        if (activa) {
+            // Que la siguiente visita traiga ya sus torneos.
+            ultimaImportacion.remove(usuarioId);
+        }
+        return tiendas(usuarioId, suyas);
+    }
+
+    private List<Tienda> tiendasKitsune(Long usuarioId) {
+        try {
+            return cuentas.tiendas(usuarioId);
+        } catch (RuntimeException ex) {
+            log.warn("No se pudieron leer las tiendas de {}: {}", usuarioId, ex.getMessage());
+            return List.of();
+        }
+    }
+
+    /** Una tienda que escribió a mano y no tenía: se agrega a sus tiendas para la próxima vez. */
+    private void recordarTienda(Long usuarioId, String nombre) {
+        if (nombre == null) {
+            return;
+        }
+        boolean yaEsta = tiendas(usuarioId, tiendasKitsune(usuarioId)).stream().anyMatch(t -> t.nombre().equalsIgnoreCase(nombre));
+        if (!yaEsta) {
+            try {
+                tiendasJugador.crear(usuarioId, nombre, null);
+            } catch (DuplicateKeyException ex) {
+                // Otra pestaña la agregó al mismo tiempo.
+            }
+        }
     }
 
     /** Los que vinieron de una tienda Kitsune solo se ocultan (si no, se volverían a importar). */
@@ -106,12 +210,9 @@ public class MisTorneosService {
 
     /** Agrega los torneos cerrados de sus tiendas Kitsune que todavía no tiene. Devuelve sus tiendas. */
     List<Tienda> importar(Long usuarioId) {
-        List<Tienda> tiendas;
-        try {
-            tiendas = cuentas.tiendas(usuarioId);
-        } catch (RuntimeException ex) {
-            log.warn("No se pudieron leer las tiendas de {}: {}", usuarioId, ex.getMessage());
-            return List.of();
+        List<Tienda> tiendas = tiendasKitsune(usuarioId);
+        if (tiendas.isEmpty()) {
+            return tiendas;
         }
         Instant ahora = reloj.instant();
         Instant ultima = ultimaImportacion.get(usuarioId);
@@ -120,7 +221,15 @@ public class MisTorneosService {
         }
         ultimaImportacion.put(usuarioId, ahora);
         Set<String> ya = repo.importados(usuarioId);
+        // Las que desactivó: sus torneos ya no se agregan solos.
+        Set<String> desactivadas = tiendasJugador.listar(usuarioId).stream()
+            .filter(f -> f.tiendaId() != null && !f.activa())
+            .map(TiendasJugadorRepositoryPort.Fila::tiendaId)
+            .collect(Collectors.toSet());
         for (Tienda tienda : tiendas) {
+            if (desactivadas.contains(tienda.tenantId())) {
+                continue;
+            }
             for (ResultadoTorneo r : torneos.resultadosDe(usuarioId, tienda, DIAS_IMPORTAR)) {
                 // Solo los cerrados (ya tienen lugares y premios) en los que de verdad jugó.
                 if (!r.cerrado() || r.lugar() == null || r.fecha() == null || ya.contains(r.tiendaId() + ":" + r.id())) {

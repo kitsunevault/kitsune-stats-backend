@@ -20,6 +20,7 @@ import com.kitsunestats.domain.model.MiTorneo.Premio;
 import com.kitsunestats.domain.model.MiTorneo.Totales;
 import com.kitsunestats.domain.port.out.KitsuneCuentasPort;
 import com.kitsunestats.domain.port.out.MisTorneosRepositoryPort;
+import com.kitsunestats.domain.port.out.TiendasJugadorRepositoryPort;
 import com.kitsunestats.domain.port.out.TorneosTiendasPort;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -40,7 +41,8 @@ class MisTorneosServiceTest {
     private final KitsuneCuentasPort cuentas = mock(KitsuneCuentasPort.class);
     private final TorneosTiendasPort tiendas = mock(TorneosTiendasPort.class);
     private final Clock reloj = Clock.fixed(Instant.parse("2026-11-17T18:00:00Z"), ZoneOffset.UTC);
-    private final MisTorneosService service = new MisTorneosService(repo, cuentas, tiendas, reloj);
+    private final TiendasJugadorRepositoryPort tiendasJugador = mock(TiendasJugadorRepositoryPort.class);
+    private final MisTorneosService service = new MisTorneosService(repo, tiendasJugador, cuentas, tiendas, reloj);
 
     private static final Tienda MAGIC = new Tienda("magiccauldron", "Magic Cauldron");
 
@@ -158,6 +160,49 @@ class MisTorneosServiceTest {
         assertThat(t.ganado()).isEqualByComparingTo("1750");
         assertThat(t.neto()).isEqualByComparingTo("1250");
         assertThat(t.sinValor()).isEqualTo(1);
+    }
+
+    @Test
+    void unaTiendaKitsuneDesactivadaYaNoImportaNiSaleActiva() {
+        Tienda otra = new Tienda("otra", "Otra Tienda");
+        when(cuentas.tiendas(7L)).thenReturn(List.of(MAGIC, otra));
+        when(repo.importados(7L)).thenReturn(new HashSet<>());
+        when(tiendasJugador.listar(7L)).thenReturn(List.of(
+            new TiendasJugadorRepositoryPort.Fila(1L, "Magic Cauldron", null, "magiccauldron", false),
+            new TiendasJugadorRepositoryPort.Fila(2L, "Card Shop Centro", "CDMX", null, true)));
+        when(tiendas.resultadosDe(anyLong(), any(), anyInt())).thenReturn(List.of());
+
+        var r = service.misTorneos(7L);
+
+        verify(tiendas, never()).resultadosDe(eq(7L), eq(MAGIC), anyInt());
+        verify(tiendas).resultadosDe(eq(7L), eq(otra), anyInt());
+        assertThat(r.tiendas()).extracting(t -> t.nombre() + "|" + t.kitsune() + "|" + t.activa())
+            .containsExactly("Magic Cauldron|true|false", "Otra Tienda|true|true", "Card Shop Centro|false|true");
+    }
+
+    @Test
+    void unaTiendaNuevaAlCapturarSeAgregaASusTiendas() {
+        when(cuentas.tiendas(7L)).thenReturn(List.of(MAGIC));
+        when(tiendasJugador.listar(7L)).thenReturn(List.of());
+        when(repo.crear(eq(7L), any())).thenReturn(1L);
+        when(repo.obtener(7L, 1L)).thenReturn(Optional.of(torneo("MXN", BigDecimal.ZERO, List.of(), List.of())));
+
+        service.crear(7L, torneo("MXN", BigDecimal.TEN, List.of(), List.of()));
+        verify(tiendasJugador).crear(7L, "Otra tienda", null);
+
+        // Una de Kitsune Vaults (aunque cambie mayúsculas) no se duplica como propia.
+        MiTorneo enMagic = new MiTorneo(null, LocalDate.of(2026, 11, 1), null, "magic cauldron", null, null, null, null, null, null, null,
+            null, null, BigDecimal.ONE, "MXN", null, List.of(), List.of());
+        service.crear(7L, enMagic);
+        verify(tiendasJugador, times(1)).crear(anyLong(), any(), any());
+    }
+
+    @Test
+    void soloSePuedeDesactivarUnaTiendaKitsuneQueEsSuya() {
+        when(cuentas.tiendas(7L)).thenReturn(List.of(MAGIC));
+        assertThatThrownBy(() -> service.estadoTiendaKitsune(7L, "ajena", false)).isInstanceOf(NoEncontradoException.class);
+        service.estadoTiendaKitsune(7L, "magiccauldron", false);
+        verify(tiendasJugador).estadoKitsune(7L, "magiccauldron", "Magic Cauldron", false);
     }
 
     @Test
