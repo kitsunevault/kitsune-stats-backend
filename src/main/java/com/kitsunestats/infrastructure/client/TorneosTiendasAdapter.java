@@ -28,7 +28,28 @@ public class TorneosTiendasAdapter implements TorneosTiendasPort {
         this.secreto = secreto;
     }
 
-    private record TorneoJugado(Long id, String nombre, LocalDate fecha, String juego, boolean cerrado, List<Participante> participantes) {
+    private record TorneoJugado(Long id, String nombre, LocalDate fecha, String juego, boolean cerrado, List<Participante> participantes,
+                                java.math.BigDecimal precioEntrada, String moneda, Integer lugar, Integer jugadores, Integer sobres,
+                                Integer puntosTienda) {
+    }
+
+    @Override
+    public List<com.kitsunestats.domain.model.Kitsune.ResultadoTorneo> resultadosDe(Long usuarioId, Tienda tienda, int dias) {
+        try {
+            List<TorneoJugado> r = restClient.get()
+                .uri(b -> b.path("/api/interno/torneos/de-usuario").queryParam("usuarioId", usuarioId).queryParam("dias", dias).build())
+                .header("X-Internal-Secret", secreto)
+                .header("X-Tenant-Id", tienda.tenantId())
+                .retrieve()
+                .body(new ParameterizedTypeReference<List<TorneoJugado>>() {});
+            return r == null ? List.of() : r.stream()
+                .map(t -> new com.kitsunestats.domain.model.Kitsune.ResultadoTorneo(tienda.tenantId(), tienda.nombre(), t.id(), t.nombre(),
+                    t.fecha(), t.juego(), t.cerrado(), t.precioEntrada(), t.moneda(), t.lugar(), t.jugadores(), t.sobres(), t.puntosTienda()))
+                .toList();
+        } catch (RestClientException ex) {
+            log.warn("No se pudieron consultar los resultados de {} en {}: {}", usuarioId, tienda.tenantId(), ex.getMessage());
+            return List.of();
+        }
     }
 
     @Override

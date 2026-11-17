@@ -1,5 +1,6 @@
 package com.kitsunestats.domain.port.out;
 
+import com.kitsunestats.domain.model.Kitsune;
 import com.kitsunestats.domain.model.Kitsune.Tienda;
 import com.kitsunestats.domain.model.Kitsune.Torneo;
 import java.util.List;
@@ -9,4 +10,9 @@ public interface TorneosTiendasPort {
 
     /** Torneos recientes de esa tienda en los que jugó el usuario; vacío si la tienda no responde. */
     List<Torneo> torneosDe(Long usuarioId, Tienda tienda);
+
+    /** Cómo le fue en los torneos de esa tienda de los últimos "dias" días; vacío si la tienda no responde. */
+    default List<Kitsune.ResultadoTorneo> resultadosDe(Long usuarioId, Tienda tienda, int dias) {
+        return List.of();
+    }
 }
